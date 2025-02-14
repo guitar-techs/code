@@ -189,11 +189,12 @@ def create_audio_plot_frame(t: float, signals: Dict[str, np.ndarray], sample_rat
         np.ndarray: RGB image array of the audio plot.
     """
     fig, ax = plt.subplots(figsize=Config.FIG_SIZE_AUDIO)
-    window_size = sample_rate  # Show 1 second of audio data
 
-    # Determine start and end index for signal extraction
-    start = int(t * sample_rate)
-    end = start + window_size
+    # Determine the center index and window of data (1 second total, half a second on each side)
+    center = int(t * sample_rate)
+    half_window = sample_rate // 2
+    start = max(center - half_window, 0)
+    end = center + half_window
 
     # Plot the signals
     for name, signal in signals.items():
@@ -202,12 +203,14 @@ def create_audio_plot_frame(t: float, signals: Dict[str, np.ndarray], sample_rat
         else:
             segment = signal[start:]  # Prevent out-of-bounds if end > signal length
 
-        # Time axis for the segment
-        time_axis = np.linspace(0, len(segment) / sample_rate, len(segment))
+        # Create time axis in seconds from start to end
+        time_axis = np.linspace(start / sample_rate, end / sample_rate, len(segment))
         ax.plot(time_axis, segment, label=name)
 
-    # Remove extra padding by setting limits exactly to the data
-    ax.set_xlim([0, len(segment) / sample_rate])
+    # Add a vertical green dashed line at the current time t.
+    ax.axvline(x=t, color='green', linestyle='--', label='Center (t)')
+    
+    ax.set_xlim([start / sample_rate, end / sample_rate])
     ax.set_ylim([-1, 1])
     ax.legend(loc="upper right")
     ax.set_xticks([])
@@ -249,7 +252,8 @@ def create_midi_plot_frame(t: float, tab_matrix: np.ndarray,
         elif value == -1:
             ax.text(col, row, "V", ha="center", va="center", fontsize=8)
 
-    # Remove the green center line by not drawing the axvline
+    # Add a vertical green dashed line at the center of the displayed segment.
+    ax.axvline(x=center_idx - start, color='green', linestyle='--', label="Center (t)")
     ax.set_xticks([])
     ax.set_yticks([])
     fig.tight_layout()
