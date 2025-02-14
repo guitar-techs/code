@@ -74,7 +74,7 @@ pip install -r requirements.txt
 Run the script using the following command:
 
 ```sh
-python visualize_GT4D.py --directory /path/to/dataset --filename 01 --output_filename output_01_start0%_end5%.mp4
+python visualize_GT4D.py --directory /path/to/dataset --filename 01 --output_filename output_01_start0%_end5%.mp4 --start_pct 0 --end_pct 100
 ```
 
 #### Arguments:
