@@ -1,0 +1,8 @@
+fire==0.7.0
+librosa==0.10.2.post1
+moviepy==1.0.3
+numpy==2.0.2
+pillow==9.5.0
+pydub==0.25.1
+scipy==1.13.1
+decorator<5.0
