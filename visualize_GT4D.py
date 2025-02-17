@@ -263,7 +263,7 @@ def create_midi_plot_frame(t: float, tab_matrix: np.ndarray,
 # -------------------------------------------------------------------
 # Main Video Composition Function
 # -------------------------------------------------------------------
-def concatenate_videos(directory: str, filename: str, output_filename: str = None,
+def concatenate_videos(directory: str, content: str, filename: str, output_filename: str = None,
                        start_pct: float = 0, end_pct: float = 100) -> None:
     """
     Concatenate ego and exo videos with dynamic audio and MIDI overlays.
@@ -271,6 +271,7 @@ def concatenate_videos(directory: str, filename: str, output_filename: str = Non
     
     Args:
         directory (str): Base directory containing subdirectories.
+        content (str): The type of content to be visualized (i.e. 'techniques', 'music', 'chords', etc.)
         filename (str): Base filename (without extension) for the input files.
         output_filename (str): Name of the output video file.
         start_pct (float): Start percentage (0-100) of the video to process.
@@ -278,11 +279,11 @@ def concatenate_videos(directory: str, filename: str, output_filename: str = Non
     """
     base_dir = Path(directory)
     # Build file paths.
-    ego_video_path = base_dir / "video" / "ego" / f"ego_{filename}.mp4"
-    exo_video_path = base_dir / "video" / "exo" / f"exo_{filename}.mp4"
-    di_audio_path = base_dir / "audio" / "directinput" / f"directinput_{filename}.wav"
-    amp_audio_path = base_dir / "audio" / "micamp" / f"micamp_{filename}.wav"
-    midi_path = base_dir / "metadata" / "midi" / f"midi_{filename}.mid"
+    ego_video_path = base_dir / content / "video" / "ego" / f"ego_{filename}.mp4"
+    exo_video_path = base_dir / content / "video" / "exo" / f"exo_{filename}.mp4"
+    di_audio_path = base_dir / content / "audio" / "directinput" / f"directinput_{filename}.wav"
+    amp_audio_path = base_dir / content / "audio" / "micamp" / f"micamp_{filename}.wav"
+    midi_path = base_dir / content / "midi" / f"midi_{filename}.mid"
 
     # Verify required video files exist.
     if not ego_video_path.exists():
@@ -352,7 +353,7 @@ def concatenate_videos(directory: str, filename: str, output_filename: str = Non
 
     # Dynamically generate the output filename if not provided
     if output_filename is None:
-        output_filename = f"output_{filename}_start{int(start_pct)}%_end{int(end_pct)}%.mp4"
+        output_filename = f"output_{filename}_start{int(start_pct)/100:.2f}_end{int(end_pct)/100:.2f}.mp4"
 
     # Extract only the desired segment from the base video.
     base_segment = combined_clip.subclip(start_time, end_time)
@@ -400,3 +401,4 @@ if __name__ == "__main__":
     except Exception as ex:
         logging.exception("An error occurred during execution")
         sys.exit(1)
+
