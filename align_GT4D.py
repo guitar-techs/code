@@ -75,7 +75,7 @@ def load_signal(signal_path, sr=None):
     y, sr = librosa.load(signal_path, sr=sr, mono=True)
     return y, sr
 
-def video_alignment(file_id, input_directory, output_directory, egoexo="exo"):
+def video_alignment(file_id, input_directory, content, output_directory, egoexo):
     """
     Process a single video file for audio alignment.
 
@@ -90,6 +90,7 @@ def video_alignment(file_id, input_directory, output_directory, egoexo="exo"):
     Parameters:
         file_id (str): Identifier for the file.
         input_directory (str): Base directory containing the video and audio files.
+        content (str): The type of content to be visualized (i.e. 'techniques', 'music', 'chords', etc.)
         output_directory (str): Base directory where the aligned video will be saved.
         egoexo (str): Specifies the video type ("ego" or "exo").
 
@@ -97,9 +98,9 @@ def video_alignment(file_id, input_directory, output_directory, egoexo="exo"):
         tuple: (initial_lag, final_lag, tolerance)
             - final_lag is None if alignment was skipped.
     """
-    video_path = os.path.join(input_directory, "video", egoexo, f"{egoexo}_{file_id}.mp4")
-    reference_signal_path = os.path.join(input_directory, "audio", "directinput", f"directinput_{file_id}.wav")
-    output_dir = os.path.join(output_directory, "video", egoexo)
+    video_path = os.path.join(input_directory, content, "video", egoexo, f"{egoexo}_{file_id}.mp4")
+    reference_signal_path = os.path.join(input_directory, content, "audio", "directinput", f"directinput_{file_id}.wav")
+    output_dir = os.path.join(output_directory, content, "video", egoexo)
     os.makedirs(output_dir, exist_ok=True)
     output_video_path = os.path.join(output_dir, f"{egoexo}_{file_id}.mp4")
     
@@ -166,7 +167,7 @@ def video_alignment(file_id, input_directory, output_directory, egoexo="exo"):
     print(f"File {file_id} ({egoexo}): Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
     return initial_lag, new_lag, tolerance
 
-def audio_alignment(file_id, input_directory, output_directory, tolerance=0.01):
+def audio_alignment(file_id, input_directory, content, output_directory, tolerance=0.01):
     """
     Process a single audio file for alignment with a reference signal.
 
@@ -180,15 +181,16 @@ def audio_alignment(file_id, input_directory, output_directory, tolerance=0.01):
     Parameters:
         file_id (str): Identifier for the file.
         input_directory (str): Base directory containing the audio files.
+        content (str): The type of content to be visualized (i.e. 'techniques', 'music', 'chords', etc.)
         output_directory (str): Base directory where the aligned audio will be saved.
         tolerance (float): Acceptable lag tolerance (default is 0.01 s).
 
     Returns:
         tuple: (initial_lag, final_lag, tolerance)
     """
-    misaligned_path = os.path.join(input_directory, "audio", "micamp", f"micamp_{file_id}.wav")
-    reference_path = os.path.join(input_directory, "audio", "directinput", f"directinput_{file_id}.wav")
-    output_dir = os.path.join(output_directory, "audio", "micamp")
+    misaligned_path = os.path.join(input_directory, content, "audio", "micamp", f"micamp_{file_id}.wav")
+    reference_path = os.path.join(input_directory, content, "audio", "directinput", f"directinput_{file_id}.wav")
+    output_dir = os.path.join(output_directory, content, "audio", "micamp")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"micamp_{file_id}.wav")
     
@@ -217,7 +219,7 @@ def audio_alignment(file_id, input_directory, output_directory, tolerance=0.01):
     
     return init_lag, new_lag, tolerance
 
-def process_video_files(input_directory, output_directory, file_ids):
+def process_video_files(input_directory, content, output_directory, file_ids):
     """
     Process multiple video files for alignment across both "ego" and "exo" types.
 
@@ -236,7 +238,7 @@ def process_video_files(input_directory, output_directory, file_ids):
 
     for fid in file_ids:
         for video_type in ["ego", "exo"]:
-            init_lag, final_lag, tol = video_alignment(fid, input_directory, output_directory, egoexo=video_type)
+            init_lag, final_lag, tol = video_alignment(fid, input_directory, content, output_directory, egoexo=video_type)
             if final_lag is not None:
                 processed_file_ids.append(f"{video_type}_{fid}")
                 initial_lags.append(init_lag)
@@ -250,7 +252,7 @@ def process_video_files(input_directory, output_directory, file_ids):
         "tolerance": tolerance_value
     }
 
-def process_audio_files(input_directory, output_directory, file_ids, tolerance=0.01):
+def process_audio_files(input_directory, content, output_directory, file_ids, tolerance=0.01):
     """
     Process multiple audio files for alignment.
 
@@ -267,7 +269,7 @@ def process_audio_files(input_directory, output_directory, file_ids, tolerance=0
     final_lags = []
 
     for fid in file_ids:
-        init_lag, final_lag, _ = audio_alignment(fid, input_directory, output_directory, tolerance)
+        init_lag, final_lag, _ = audio_alignment(fid, input_directory, content, output_directory, tolerance)
         initial_lags.append(init_lag)
         final_lags.append(final_lag)
     
@@ -276,24 +278,26 @@ def process_audio_files(input_directory, output_directory, file_ids, tolerance=0
         "final_lags": final_lags
     }
 
-def main(input_directory, output_directory, start=1, end=12):
-    """
-    Main function to process video and audio files for alignment.
-
-    Parameters:
-        input_directory (str): Base directory containing the source files.
-        output_directory (str): Base directory where aligned files will be saved.
-        start (int): Starting file id number (inclusive).
-        end (int): Ending file id number (exclusive). File ids will be formatted as two-digit numbers.
-    """
-    file_ids = [f"{i:02d}" for i in range(start, end+1)]
+def main(input_directory, content, output_directory):
+    # Dynamically generate file_ids
+    micamp_dir = os.path.join(input_directory, content, "audio", "micamp")
+    micamp_files = [f for f in os.listdir(micamp_dir) if f.startswith("micamp_") and f.endswith(".wav")]
+    file_ids = [fname[len("micamp_"):-4] for fname in micamp_files]
+    
+    ego_video_dir = os.path.join(input_directory, content, "video", "ego")
+    exo_video_dir = os.path.join(input_directory, content, "video", "exo")
+    
+    ego_files = [f for f in os.listdir(ego_video_dir) if f.startswith("ego_") and f.endswith(".mp4")]
+    exo_files = [f for f in os.listdir(exo_video_dir) if f.startswith("exo_") and f.endswith(".mp4")]
+    ego_file_ids = [fname[len("ego_"):-4] for fname in ego_files]
+    exo_file_ids = [fname[len("exo_"):-4] for fname in exo_files]
     
     print("Starting video alignment processing...\n")
-    video_results = process_video_files(input_directory, output_directory, file_ids)
+    video_results = process_video_files(input_directory, content, output_directory, file_ids)
     print("Video alignment processing completed.\n")
 
     print("Starting audio alignment processing...\n")
-    audio_results = process_audio_files(input_directory, output_directory, file_ids)
+    audio_results = process_audio_files(input_directory, content, output_directory, file_ids)
     print("Audio alignment processing completed.\n")
     
     return {
