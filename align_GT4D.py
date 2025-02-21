@@ -75,7 +75,8 @@ def load_signal(signal_path, sr=None):
     y, sr = librosa.load(signal_path, sr=sr, mono=True)
     return y, sr
 
-def video_alignment(file_id, input_directory, content, output_directory, egoexo):
+
+def video_alignment(video_path, input_directory, output_directory, egoexo):
     """
     Process a single video file for audio alignment.
 
@@ -88,9 +89,7 @@ def video_alignment(file_id, input_directory, content, output_directory, egoexo)
       6. Verify the final lag after adjustment.
 
     Parameters:
-        file_id (str): Identifier for the file.
-        input_directory (str): Base directory containing the video and audio files.
-        content (str): The type of content to be visualized (i.e. 'techniques', 'music', 'chords', etc.)
+        video_path (str): Full path to the video file.
         output_directory (str): Base directory where the aligned video will be saved.
         egoexo (str): Specifies the video type ("ego" or "exo").
 
@@ -98,11 +97,13 @@ def video_alignment(file_id, input_directory, content, output_directory, egoexo)
         tuple: (initial_lag, final_lag, tolerance)
             - final_lag is None if alignment was skipped.
     """
-    video_path = os.path.join(input_directory, content, "video", egoexo, f"{egoexo}_{file_id}.mp4")
-    reference_signal_path = os.path.join(input_directory, content, "audio", "directinput", f"directinput_{file_id}.wav")
-    output_dir = os.path.join(output_directory, content, "video", egoexo)
-    os.makedirs(output_dir, exist_ok=True)
-    output_video_path = os.path.join(output_dir, f"{egoexo}_{file_id}.mp4")
+    # Determine reference audio path dynamically
+    reference_signal_path = video_path.replace("video", "audio").replace(egoexo, "directinput").replace(f"{egoexo}_", "directinput_").replace(".mp4", ".wav")
+
+    # Preserve the original folder structure in the output directory
+    relative_path = os.path.relpath(video_path, input_directory)
+    output_video_path = os.path.join(output_directory, relative_path)
+    os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
     
     video_signal, sr = get_audio_from_vid(video_path)
     reference_signal, _ = librosa.load(reference_signal_path, sr=sr, mono=True)
@@ -115,7 +116,7 @@ def video_alignment(file_id, input_directory, content, output_directory, egoexo)
         initial_lag = np.mean(channel_lags)
     
     if abs(initial_lag) > OUTLIER_THRESHOLD:
-        print(f"File {file_id} ({egoexo}): Outlier detected with initial lag {initial_lag:.4f} s. Skipping alignment.")
+        print(f"File {video_path} ({egoexo}): Outlier detected with initial lag {initial_lag:.4f} s. Skipping alignment.")
         tolerance = 1.0 / VideoFileClip(video_path).fps
         return initial_lag, None, tolerance
     
@@ -126,19 +127,19 @@ def video_alignment(file_id, input_directory, content, output_directory, egoexo)
     
     if initial_lag > 0:
         adjusted_shift = math.ceil(initial_lag / frame_duration) * frame_duration
-        print(f"File {file_id} ({egoexo}): Audio lags behind by {initial_lag:.4f} s; trimming first {adjusted_shift:.4f} s.")
+        print(f"File {video_path} ({egoexo}): Audio lags behind by {initial_lag:.4f} s; trimming first {adjusted_shift:.4f} s.")
         shifted_clip = clip.subclip(adjusted_shift, clip.duration)
     elif initial_lag < 0:
         pad_duration = abs(initial_lag)
         adjusted_pad = math.ceil(pad_duration / frame_duration) * frame_duration
-        print(f"File {file_id} ({egoexo}): Audio is ahead by {pad_duration:.4f} s; adding {adjusted_pad:.4f} s of padding.")
+        print(f"File {video_path} ({egoexo}): Audio is ahead by {pad_duration:.4f} s; adding {adjusted_pad:.4f} s of padding.")
         black_clip = ColorClip(size=clip.size, color=(0, 0, 0), duration=adjusted_pad)
         black_clip = black_clip.set_fps(clip.fps)
         silent_audio = AudioClip(lambda t: 0, duration=adjusted_pad, fps=sr)
         black_clip = black_clip.set_audio(silent_audio)
         shifted_clip = concatenate_videoclips([black_clip, clip])
     else:
-        print(f"File {file_id} ({egoexo}): No shift required; audio is aligned.")
+        print(f"File {video_path} ({egoexo}): No shift required; audio is aligned.")
         shifted_clip = clip
 
     shifted_clip.write_videofile(
@@ -164,10 +165,11 @@ def video_alignment(file_id, input_directory, content, output_directory, egoexo)
                             for ch in range(aligned_audio.shape[1])]
         new_lag = np.mean(new_channel_lags)
     
-    print(f"File {file_id} ({egoexo}): Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
+    print(f"File {video_path} ({egoexo}): Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
     return initial_lag, new_lag, tolerance
 
-def audio_alignment(file_id, input_directory, content, output_directory, tolerance=0.01):
+
+def audio_alignment(misaligned_path, input_directory, output_directory, tolerance=0.01):
     """
     Process a single audio file for alignment with a reference signal.
 
@@ -179,7 +181,7 @@ def audio_alignment(file_id, input_directory, content, output_directory, toleran
       5. Re-compute the final lag after alignment.
 
     Parameters:
-        file_id (str): Identifier for the file.
+        misaligned_path (str): Full path to the misaligned audio file.
         input_directory (str): Base directory containing the audio files.
         content (str): The type of content to be visualized (i.e. 'techniques', 'music', 'chords', etc.)
         output_directory (str): Base directory where the aligned audio will be saved.
@@ -188,11 +190,13 @@ def audio_alignment(file_id, input_directory, content, output_directory, toleran
     Returns:
         tuple: (initial_lag, final_lag, tolerance)
     """
-    misaligned_path = os.path.join(input_directory, content, "audio", "micamp", f"micamp_{file_id}.wav")
-    reference_path = os.path.join(input_directory, content, "audio", "directinput", f"directinput_{file_id}.wav")
-    output_dir = os.path.join(output_directory, content, "audio", "micamp")
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"micamp_{file_id}.wav")
+    # Determine the reference signal path based on the misaligned file's structure
+    reference_path = misaligned_path.replace("micamp", "directinput")
+
+    # Preserve the folder structure in output
+    relative_path = os.path.relpath(misaligned_path, input_directory)
+    output_path = os.path.join(output_directory, relative_path)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     signal, sr = load_signal(misaligned_path)
     ref_signal, _ = load_signal(reference_path, sr=sr)
@@ -202,64 +206,75 @@ def audio_alignment(file_id, input_directory, content, output_directory, toleran
     if init_lag > 0:
         pad_samples = int(math.ceil(init_lag * sr))
         aligned_signal = np.concatenate((np.zeros(pad_samples), signal))
-        print(f"File {file_id}: Audio lags behind by {init_lag:.4f} s; padding with {pad_samples} zeros.")
+        print(f"File {misaligned_path}: Audio lags behind by {init_lag:.4f} s; padding with {pad_samples} zeros.")
     elif init_lag < 0:
         trim_samples = int(math.ceil(abs(init_lag) * sr))
         aligned_signal = signal[trim_samples:]
-        print(f"File {file_id}: Audio is ahead by {abs(init_lag):.4f} s; trimming first {trim_samples} samples.")
+        print(f"File {misaligned_path}: Audio is ahead by {abs(init_lag):.4f} s; trimming first {trim_samples} samples.")
     else:
         aligned_signal = signal.copy()
-        print(f"File {file_id}: No shift required; audio is aligned.")
+        print(f"File {misaligned_path}: No shift required; audio is aligned.")
     
     sf.write(output_path, aligned_signal, sr)
     aligned_signal, sr_aligned = librosa.load(output_path)
     ref_signal, _ = librosa.load(reference_path, sr=sr_aligned)
     new_lag = compute_lag(aligned_signal, ref_signal, sr)
-    print(f"File {file_id}: Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
+    print(f"File {misaligned_path}: Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
     
     return init_lag, new_lag, tolerance
 
-def process_video_files(input_directory, content, output_directory, file_ids):
+
+def process_video_files(input_directory, output_directory, file_paths):
     """
     Process multiple video files for alignment across both "ego" and "exo" types.
 
     Parameters:
         input_directory (str): Base directory containing the video and audio files.
         output_directory (str): Base directory where aligned videos will be saved.
-        file_ids (list of str): List of file identifiers.
+        file_paths (list of str): List of full paths to video files.
 
     Returns:
-        dict: Dictionary containing processed file IDs, initial lags, final lags, and tolerance value.
+        dict: Dictionary containing processed file paths, initial lags, final lags, and tolerance value.
     """
-    processed_file_ids = []
+    processed_file_paths = []
     initial_lags = []
     final_lags = []
     tolerance_value = None
 
-    for fid in file_ids:
-        for video_type in ["ego", "exo"]:
-            init_lag, final_lag, tol = video_alignment(fid, input_directory, content, output_directory, egoexo=video_type)
-            if final_lag is not None:
-                processed_file_ids.append(f"{video_type}_{fid}")
-                initial_lags.append(init_lag)
-                final_lags.append(final_lag)
-                tolerance_value = tol
+    for file_path in file_paths:
+        # Determine whether it's an "ego" or "exo" video based on filename
+        egoexo = "ego" if "ego_" in file_path else "exo"
+
+        # Preserve the original folder structure in the output directory
+        relative_path = os.path.relpath(file_path, input_directory)
+        output_video_path = os.path.join(output_directory, relative_path)
+        os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
+
+        # Perform video alignment
+        init_lag, final_lag, tol = video_alignment(file_path, input_directory, output_video_path, egoexo)
+
+        if final_lag is not None:
+            processed_file_paths.append(output_video_path)
+            initial_lags.append(init_lag)
+            final_lags.append(final_lag)
+            tolerance_value = tol
     
     return {
-        "processed_file_ids": processed_file_ids,
+        "processed_file_paths": processed_file_paths,
         "initial_lags": initial_lags,
         "final_lags": final_lags,
         "tolerance": tolerance_value
     }
 
-def process_audio_files(input_directory, content, output_directory, file_ids, tolerance=0.01):
+
+def process_audio_files(input_directory, output_directory, file_paths, tolerance=0.01):
     """
     Process multiple audio files for alignment.
 
     Parameters:
         input_directory (str): Base directory containing the audio files.
         output_directory (str): Base directory where aligned audio will be saved.
-        file_ids (list of str): List of file identifiers.
+        file_paths (list of str): List of full paths to misaligned audio files.
         tolerance (float): Acceptable lag tolerance (default is 0.01 s).
 
     Returns:
@@ -268,8 +283,8 @@ def process_audio_files(input_directory, content, output_directory, file_ids, to
     initial_lags = []
     final_lags = []
 
-    for fid in file_ids:
-        init_lag, final_lag, _ = audio_alignment(fid, input_directory, content, output_directory, tolerance)
+    for file_path in file_paths:
+        init_lag, final_lag, _ = audio_alignment(file_path, input_directory, output_directory, tolerance)
         initial_lags.append(init_lag)
         final_lags.append(final_lag)
     
@@ -278,32 +293,37 @@ def process_audio_files(input_directory, content, output_directory, file_ids, to
         "final_lags": final_lags
     }
 
-def main(input_directory, content, output_directory):
-    # Dynamically generate file_ids
-    micamp_dir = os.path.join(input_directory, content, "audio", "micamp")
-    micamp_files = [f for f in os.listdir(micamp_dir) if f.startswith("micamp_") and f.endswith(".wav")]
-    file_ids = [fname[len("micamp_"):-4] for fname in micamp_files]
-    
-    ego_video_dir = os.path.join(input_directory, content, "video", "ego")
-    exo_video_dir = os.path.join(input_directory, content, "video", "exo")
-    
-    ego_files = [f for f in os.listdir(ego_video_dir) if f.startswith("ego_") and f.endswith(".mp4")]
-    exo_files = [f for f in os.listdir(exo_video_dir) if f.startswith("exo_") and f.endswith(".mp4")]
-    ego_file_ids = [fname[len("ego_"):-4] for fname in ego_files]
-    exo_file_ids = [fname[len("exo_"):-4] for fname in exo_files]
-    
+
+def main(input_directory, output_directory):
+    # Lists to store absolute paths of audio and video files
+    micamp_files = []
+    ego_files = []
+    exo_files = []
+
+    # Recursively find all files
+    for root, _, files in os.walk(input_directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            if file.startswith("micamp_") and file.endswith(".wav"):
+                micamp_files.append(file_path)
+            elif file.startswith("ego_") and file.endswith(".mp4"):
+                ego_files.append(file_path)
+            elif file.startswith("exo_") and file.endswith(".mp4"):
+                exo_files.append(file_path)
+
     print("Starting video alignment processing...\n")
-    video_results = process_video_files(input_directory, content, output_directory, file_ids)
+    video_results = process_video_files(input_directory, output_directory, ego_files + exo_files)
     print("Video alignment processing completed.\n")
 
     print("Starting audio alignment processing...\n")
-    audio_results = process_audio_files(input_directory, content, output_directory, file_ids)
+    audio_results = process_audio_files(input_directory, output_directory, micamp_files)
     print("Audio alignment processing completed.\n")
     
     return {
         "video_results": video_results,
         "audio_results": audio_results
     }
+
 
 if __name__ == "__main__":
     import fire
