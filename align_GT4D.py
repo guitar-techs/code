@@ -40,6 +40,7 @@ def get_audio_from_vid(vid_path):
     normalized_x = x / max(abs(max_val), abs(min_val))
     return normalized_x, audio.frame_rate
 
+
 def compute_lag(signal1, signal2, sr):
     """
     Compute the time lag between two signals using cross-correlation.
@@ -58,6 +59,7 @@ def compute_lag(signal1, signal2, sr):
     lag_index = np.argmax(np.abs(corr)) - (len(signal2) - 1)
     lag_seconds = lag_index / sr
     return lag_seconds
+
 
 def load_signal(signal_path, sr=None):
     """
@@ -90,6 +92,7 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
 
     Parameters:
         video_path (str): Full path to the video file.
+        input_directory (str): Base directory containing the video files.
         output_directory (str): Base directory where the aligned video will be saved.
         egoexo (str): Specifies the video type ("ego" or "exo").
 
@@ -116,7 +119,7 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
         initial_lag = np.mean(channel_lags)
     
     if abs(initial_lag) > OUTLIER_THRESHOLD:
-        print(f"File {video_path} ({egoexo}): Outlier detected with initial lag {initial_lag:.4f} s. Skipping alignment.")
+        print(f"File {video_path}: Outlier detected with initial lag {initial_lag:.4f} s. Skipping alignment.")
         tolerance = 1.0 / VideoFileClip(video_path).fps
         return initial_lag, None, tolerance
     
@@ -127,19 +130,19 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
     
     if initial_lag > 0:
         adjusted_shift = math.ceil(initial_lag / frame_duration) * frame_duration
-        print(f"File {video_path} ({egoexo}): Audio lags behind by {initial_lag:.4f} s; trimming first {adjusted_shift:.4f} s.")
+        print(f"File {video_path}: Audio lags behind by {initial_lag:.4f} s; trimming first {adjusted_shift:.4f} s.")
         shifted_clip = clip.subclip(adjusted_shift, clip.duration)
     elif initial_lag < 0:
         pad_duration = abs(initial_lag)
         adjusted_pad = math.ceil(pad_duration / frame_duration) * frame_duration
-        print(f"File {video_path} ({egoexo}): Audio is ahead by {pad_duration:.4f} s; adding {adjusted_pad:.4f} s of padding.")
+        print(f"File {video_path}: Audio is ahead by {pad_duration:.4f} s; adding {adjusted_pad:.4f} s of padding.")
         black_clip = ColorClip(size=clip.size, color=(0, 0, 0), duration=adjusted_pad)
         black_clip = black_clip.set_fps(clip.fps)
         silent_audio = AudioClip(lambda t: 0, duration=adjusted_pad, fps=sr)
         black_clip = black_clip.set_audio(silent_audio)
         shifted_clip = concatenate_videoclips([black_clip, clip])
     else:
-        print(f"File {video_path} ({egoexo}): No shift required; audio is aligned.")
+        print(f"File {video_path}: No shift required; audio is aligned.")
         shifted_clip = clip
 
     shifted_clip.write_videofile(
@@ -165,7 +168,7 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
                             for ch in range(aligned_audio.shape[1])]
         new_lag = np.mean(new_channel_lags)
     
-    print(f"File {video_path} ({egoexo}): Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
+    print(f"File {video_path} : Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
     return initial_lag, new_lag, tolerance
 
 
@@ -245,13 +248,12 @@ def process_video_files(input_directory, output_directory, file_paths):
         # Determine whether it's an "ego" or "exo" video based on filename
         egoexo = "ego" if "ego_" in file_path else "exo"
 
-        # Preserve the original folder structure in the output directory
+        # Construct output path
         relative_path = os.path.relpath(file_path, input_directory)
         output_video_path = os.path.join(output_directory, relative_path)
-        os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
-
+        
         # Perform video alignment
-        init_lag, final_lag, tol = video_alignment(file_path, input_directory, output_video_path, egoexo)
+        init_lag, final_lag, tol = video_alignment(file_path, input_directory, output_directory, egoexo)
 
         if final_lag is not None:
             processed_file_paths.append(output_video_path)
