@@ -1,4 +1,4 @@
-# Guitar-TECHS Dataset Alignment
+# usicusicGuitar-TECHS Dataset Alignment
 
 ## Overview
 
@@ -18,25 +18,22 @@ The script assumes the following dataset structure:
 
 ```
 Guitar-TECHS/
-├── audio/
-│   ├── directinput/
-│   │   ├── directinput_01.wav
-│   │   ├── directinput_02.wav
-│   │   ├── ...
-│   ├── micamp/
-│   │   ├── micamp_01.wav
-│   │   ├── micamp_02.wav
-│   │   ├── ...
-│
-├── video/
-│   ├── ego/
-│   │   ├── ego_01.mp4
-│   │   ├── ego_02.mp4
-│   │   ├── ...
-│   ├── exo/
-│   │   ├── exo_01.mp4
-│   │   ├── exo_02.mp4
-│   │   ├── ...
+├── P1/
+│   ├── music/
+│   │   ├── audio/
+│   │   │   ├── directinput/
+│   │   │   │   ├── directinput_01.wav
+│   │   │   ├── micamp/
+│   │   │   │   ├── micamp_01.wav
+│   │   ├── video/
+│   │   │   ├── ego/
+│   │   │   │   ├── ego_01.mp4
+│   │   │   ├── exo/
+│   │   │   │   ├── exo_01.mp4
+│   │
+│   │
+├── P2/
+├── P3/
 ```
 
 ## Installation
@@ -55,15 +52,14 @@ pip install -r requirements.txt
 Run the script using the following command:
 
 ```sh
-python align_GT4D.py --input_directory /path/to/dataset --output_directory /path/to/output --start 1 --end 12
+python align_GT4D.py --input_directory /path/to/dataset --content <content_type> --output_directory /path/to/output
 ```
 
 ### Arguments:
 
 - `--input_directory`: Path to the dataset directory.
+- `--content`: Specifies the content type (e.g., `techniques`, `music`, `chords`).
 - `--output_directory`: Path where aligned files will be saved.
-- `--start`: Starting file index (default: 1).
-- `--end`: Ending file index (default: 12).
 
 ## Alignment Process
 
@@ -91,21 +87,17 @@ The script will generate aligned video and audio files inside the specified outp
 
 ```
 /path/to/output/
-├── audio/
-│   ├── micamp/
-│   │   ├── micamp_01.wav
-│   │   ├── micamp_02.wav
-│   │   ├── ...
-│
-├── video/
-│   ├── ego/
-│   │   ├── ego_01.mp4
-│   │   ├── ego_02.mp4
-│   │   ├── ...
-│   ├── exo/
-│   │   ├── exo_01.mp4
-│   │   ├── exo_02.mp4
-│   │   ├── ...
+├── music/
+│   ├── audio/
+│   │   ├── micamp/
+│   │   │   ├── micamp_01.wav
+│   │   ├── directinput/
+│   │   │   ├── directinput_01.wav
+│   ├── video/
+│   │   ├── ego/
+│   │   │   ├── ego_01.mp4
+│   │   ├── exo/
+│   │   │   ├── exo_01.mp4
 ```
 
 ## License
