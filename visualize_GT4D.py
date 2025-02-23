@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 import librosa
 import pretty_midi
 from pydub import AudioSegment
@@ -177,46 +178,67 @@ def build_tab_matrix(midi_data: pretty_midi.PrettyMIDI,
 
 
 def create_audio_plot_frame(t: float, signals: Dict[str, np.ndarray], sample_rate: int) -> np.ndarray:
-    """
-    Generate an image frame plotting audio signals at time t without initial white spaces.
-
-    Args:
-        t (float): Current time in seconds.
-        signals (Dict[str, np.ndarray]): Dictionary of audio signals.
-        sample_rate (int): Sampling rate of the signals.
-
-    Returns:
-        np.ndarray: RGB image array of the audio plot.
+    """ 
+    Generate an audio plot frame with:
+    - 1-second window centered at t
+    - Y-axis fixed to [-1, 1]
+    - 10 equal vertical divisions
+    - Visible plot borders
+    - Static vertical grid
     """
     fig, ax = plt.subplots(figsize=Config.FIG_SIZE_AUDIO)
-
-    # Determine the center index and window of data (1 second total, half a second on each side)
-    center = int(t * sample_rate)
-    half_window = sample_rate // 2
-    start = max(center - half_window, 0)
-    end = center + half_window
-
-    # Plot the signals
+    
+    # Calculate fixed 1-second window (0.5s on each side of t)
+    window_size = 1.0
+    start_time = t - 0.5
+    end_time = t + 0.5
+    
+    # Adjust window boundaries if needed
+    min_time = 0
+    max_time = max(len(s)/sample_rate for s in signals.values())
+    
+    if start_time < min_time:
+        end_time += (min_time - start_time)
+        start_time = min_time
+    if end_time > max_time:
+        start_time -= (end_time - max_time)
+        end_time = max_time
+    
+    # Calculate absolute boundaries for 10 divisions
+    division_size = (end_time - start_time) / 10  # Dynamic division size
+    x_min = start_time
+    x_max = x_min + (10 * division_size)  # Force exact 10 divisions
+    
+    # Plot signals with precise alignment
     for name, signal in signals.items():
-        if end <= len(signal):
-            segment = signal[start:end]
-        else:
-            segment = signal[start:]  # Prevent out-of-bounds if end > signal length
-
-        # Create time axis in seconds from start to end
-        time_axis = np.linspace(start / sample_rate, end / sample_rate, len(segment))
-        ax.plot(time_axis, segment, label=name)
-
-    # Add a vertical green dashed line at the current time t.
+        start_sample = int(x_min * sample_rate)
+        end_sample = int(x_max * sample_rate)
+        time_axis = np.linspace(x_min, x_max, end_sample - start_sample)
+        ax.plot(time_axis, signal[start_sample:end_sample], 
+                label=name, linewidth=0.75)
+    
+    # Formatting requirements
+    ax.set_ylim(-1, 1)
+    ax.set_xlim(x_min, x_max)
     ax.axvline(x=t, color='green', linestyle='--', label='Center (t)')
     
-    ax.set_xlim([start / sample_rate, end / sample_rate])
-    ax.set_ylim([-1, 1])
+    # Configure grid and ticks
+    ax.xaxis.set_major_locator(MultipleLocator(division_size))
+    ax.grid(axis='x', linestyle='--', color='gray', alpha=0.7)
+    
+    # Maintain plot borders
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        
+    ax.tick_params(axis='both', which='both',
+                   labelleft=False, labelbottom=False,
+                   length=0)
+    
     ax.legend(loc="upper right")
-    ax.set_xticks([])
-    ax.set_yticks([])
     fig.tight_layout()
+    
     return fig_to_array(fig)
+
 
 
 def create_midi_plot_frame(t: float, tab_matrix: np.ndarray,
@@ -401,4 +423,3 @@ if __name__ == "__main__":
     except Exception as ex:
         logging.exception("An error occurred during execution")
         sys.exit(1)
-
