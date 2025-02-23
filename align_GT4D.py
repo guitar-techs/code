@@ -5,7 +5,7 @@ import librosa
 import matplotlib.pyplot as plt
 import csv
 import soundfile as sf
-from scipy.signal import correlate
+from scipy.signal import correlate, hilbert
 from pydub import AudioSegment
 from moviepy.editor import VideoFileClip, ColorClip, AudioClip, concatenate_videoclips
 
@@ -74,7 +74,7 @@ def load_signal(signal_path, sr=None):
             - y (np.ndarray): Loaded audio signal (mono).
             - sr (int): Sampling rate of the loaded audio.
     """
-    y, sr = librosa.load(signal_path, sr=sr, mono=True)
+    y, sr = librosa.load(signal_path, sr=sr, mono=False)
     return y, sr
 
 
@@ -110,16 +110,24 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
     
     video_signal, sr = get_audio_from_vid(video_path)
     reference_signal, _ = librosa.load(reference_signal_path, sr=sr, mono=True)
+
+    video_signal_s = video_signal - np.mean(video_signal, axis=0, keepdims=True)
+    video_signal_s /= np.std(video_signal_s, axis=0, keepdims=True)
+    reference_signal_s = reference_signal - np.mean(reference_signal)
+    reference_signal_s /= np.std(reference_signal_s)
+    video_envelope = np.abs(hilbert(video_signal_s, axis=0))
+    reference_envelope = np.abs(hilbert(reference_signal_s))
     
     if video_signal.ndim == 1:
-        initial_lag = compute_lag(video_signal, reference_signal, sr)
+        initial_lag = compute_lag(video_envelope, reference_envelope, sr)
     else:
-        channel_lags = [compute_lag(video_signal[:, ch], reference_signal, sr)
-                        for ch in range(video_signal.shape[1])]
+        channel_lags = [compute_lag(video_envelope[:, ch], reference_envelope, sr)
+                        for ch in range(video_signal_s.shape[1])]
         initial_lag = np.mean(channel_lags)
     
     if abs(initial_lag) > OUTLIER_THRESHOLD:
         print(f"File {video_path}: Outlier detected with initial lag {initial_lag:.4f} s. Skipping alignment.")
+        input()
         tolerance = 1.0 / VideoFileClip(video_path).fps
         return initial_lag, None, tolerance
     
@@ -161,10 +169,13 @@ def video_alignment(video_path, input_directory, output_directory, egoexo):
     )
     
     aligned_audio, _ = get_audio_from_vid(output_video_path)
+    aligned_audio -= np.mean(aligned_audio, axis=0, keepdims=True)
+    aligned_audio /= np.std(aligned_audio, axis=0, keepdims=True)
+    aligned_audio_env = np.abs(hilbert(aligned_audio, axis=0))
     if aligned_audio.ndim == 1:
-        new_lag = compute_lag(aligned_audio, reference_signal, sr)
+        new_lag = compute_lag(aligned_audio_env, reference_envelope, sr)
     else:
-        new_channel_lags = [compute_lag(aligned_audio[:, ch], reference_signal, sr)
+        new_channel_lags = [compute_lag(aligned_audio_env[:, ch], reference_envelope, sr)
                             for ch in range(aligned_audio.shape[1])]
         new_lag = np.mean(new_channel_lags)
     
@@ -202,29 +213,43 @@ def audio_alignment(misaligned_path, input_directory, output_directory, toleranc
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     signal, sr = load_signal(misaligned_path)
-    ref_signal, _ = load_signal(reference_path, sr=sr)
+    ref_signal, _ = librosa.load(reference_path, sr=sr, mono=True)
+    signal_s = signal - np.mean(signal, axis=1, keepdims=True)
+    signal_s /= np.std(signal_s, axis=1, keepdims=True) 
+    signal_s = signal_s.T
+    ref_signal_s = ref_signal - np.mean(ref_signal)
+    ref_signal_s /= np.std(ref_signal_s)
     
-    init_lag = compute_lag(signal, ref_signal, sr)
+    if signal.ndim == 1:
+        initial_lag = compute_lag(signal_s, ref_signal_s, sr)
+    else:
+        channel_lags = [compute_lag(signal_s[:, ch], ref_signal_s, sr)
+                        for ch in range(signal_s.shape[1])]
+        initial_lag = np.mean(channel_lags)
     
-    if init_lag > 0:
-        pad_samples = int(math.ceil(init_lag * sr))
-        aligned_signal = np.concatenate((np.zeros(pad_samples), signal))
-        print(f"File {misaligned_path}: Audio lags behind by {init_lag:.4f} s; padding with {pad_samples} zeros.")
-    elif init_lag < 0:
-        trim_samples = int(math.ceil(abs(init_lag) * sr))
-        aligned_signal = signal[trim_samples:]
-        print(f"File {misaligned_path}: Audio is ahead by {abs(init_lag):.4f} s; trimming first {trim_samples} samples.")
+    # Apply alignment
+    if initial_lag > 0:
+        pad_samples = int(math.ceil(initial_lag * sr))
+        aligned_signal = np.pad(signal, ((0, 0), (pad_samples, 0)), mode='constant')
+        print(f"File {misaligned_path}: Audio lags behind by {initial_lag:.4f} s; padding {pad_samples} samples.")
+    elif initial_lag < 0:
+        trim_samples = int(math.ceil(abs(initial_lag) * sr))
+        aligned_signal = signal[:, trim_samples:]
+        print(f"File {misaligned_path}: Audio is ahead by {abs(initial_lag):.4f} s; trimming {trim_samples} samples.")
     else:
         aligned_signal = signal.copy()
         print(f"File {misaligned_path}: No shift required; audio is aligned.")
     
-    sf.write(output_path, aligned_signal, sr)
-    aligned_signal, sr_aligned = librosa.load(output_path)
-    ref_signal, _ = librosa.load(reference_path, sr=sr_aligned)
-    new_lag = compute_lag(aligned_signal, ref_signal, sr)
+    sf.write(output_path, aligned_signal.T, sr)
+
+    # Verify final lag
+    aligned_signal, _ = librosa.load(output_path, sr=sr, mono=False)
+    if aligned_signal.ndim == 1:
+        aligned_signal = np.expand_dims(aligned_signal, axis=0)
+    new_lag = np.mean([compute_lag(aligned_signal[ch, :], ref_signal_s, sr) for ch in range(aligned_signal.shape[0])])
     print(f"File {misaligned_path}: Final lag: {new_lag:.4f} s (tolerance: {tolerance:.4f} s)\n")
-    
-    return init_lag, new_lag, tolerance
+
+    return initial_lag, new_lag, tolerance
 
 
 def process_video_files(input_directory, output_directory, file_paths):
